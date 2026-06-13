@@ -92,7 +92,7 @@ export async function POST(request: Request) {
         try {
           const { done, value } = await reader.read();
           if (done) {
-            logQuestion({ question, answer: fullAnswer }).catch(() => {});
+            await logQuestion({ question, answer: fullAnswer }).catch(() => {});
             controller.close();
             return;
           }
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
             }
           }
         } catch (err) {
-          logQuestion({
+          await logQuestion({
             question,
             error: err instanceof Error ? err.message : String(err),
           }).catch(() => {});
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    logQuestion({ question, error: errMsg }).catch(() => {});
+    await logQuestion({ question, error: errMsg }).catch(() => {});
 
     return new Response(
       JSON.stringify({
