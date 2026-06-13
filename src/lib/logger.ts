@@ -140,18 +140,16 @@ async function sendToTelegram(payload: LogPayload) {
   }).catch((err) => console.error("Telegram send failed:", err));
 }
 
-/* ── Main logger — both Sheet + Telegram (fire-and-forget) ── */
+/* ── Main logger — both Sheet + Telegram (awaited so Vercel doesn't kill them) ── */
 export async function logQuestion(payload: LogPayload): Promise<void> {
   const timestamp = new Date().toISOString();
   const status = payload.error ? "FAILED" : "SUCCESS";
 
-  // Fire Telegram immediately (no dependency on Sheet)
-  sendToTelegram(payload).catch(() => {});
+  const tasks: Promise<unknown>[] = [sendToTelegram(payload)];
 
-  // Sheet logging
   if (SHEET_ID) {
-    getGoogleAccessToken()
-      .then((token) => {
+    const sheetTask = getGoogleAccessToken()
+      .then(async (token) => {
         if (!token) return;
         const values = [
           timestamp,
@@ -163,10 +161,13 @@ export async function logQuestion(payload: LogPayload): Promise<void> {
           payload.error ? "" : "✅",
           payload.error ? payload.error.slice(0, 500) : "",
         ];
-        return appendToSheet(token, values);
+        await appendToSheet(token, values);
       })
       .catch((err) => console.error("Sheet logging error:", err));
+    tasks.push(sheetTask);
   } else {
     console.warn("Google Sheet logging not configured (LOG_GOOGLE_SHEET_ID missing)");
   }
+
+  await Promise.allSettled(tasks);
 }
