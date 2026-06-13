@@ -1,21 +1,35 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "UstazBot AI Islamik",
+  title: "UstazBot — Jawapan Agama Islam | AI Bermazhab Shafie-ASWJ",
   description:
-    "UstazBot ialah AI bermazhab Shafie-ASWJ yang membantu menjawab persoalan agama secara ringkas dan tepat.",
+    "UstazBot ialah AI bermazhab Shafie-ASWJ yang membantu menjawab persoalan agama secara ringkas dan tepat. Rujukan muktabar, jawapan Bahasa Melayu, fiqh Malaysia.",
+  keywords: [
+    "ustazbot",
+    "soal jawab agama",
+    "fiqh shafie",
+    "ASWJ",
+    "hukum Islam",
+    "AI Islam",
+    "soal jawab Islam Malaysia",
+  ],
+  openGraph: {
+    title: "UstazBot — Jawapan Agama Islam",
+    description:
+      "AI bermazhab Shafie-ASWJ. Tanya soalan agama, dapat jawapan berlandaskan rujukan muktabar.",
+    url: "https://ustazbot.com",
+    siteName: "UstazBot",
+    type: "website",
+    locale: "ms_MY",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -24,10 +38,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="ms">
+      <body className={`${inter.variable} antialiased`}>
         {children}
       </body>
     </html>
