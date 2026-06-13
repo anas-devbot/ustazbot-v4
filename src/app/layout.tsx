@@ -34,9 +34,9 @@ export const metadata: Metadata = {
     images: ["/icon-ustazbot.webp"],
   },
   icons: {
-    icon: "/icon-ustazbot.webp",
-    shortcut: "/icon-ustazbot.webp",
-    apple: "/icon-ustazbot.webp",
+    icon: "/icon-ustazbot-48.webp",
+    shortcut: "/icon-ustazbot-48.webp",
+    apple: "/icon-ustazbot-48.webp",
   },
   metadataBase: new URL("https://ustazbot.com"),
   robots: {

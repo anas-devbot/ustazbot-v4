@@ -158,21 +158,27 @@ function AnswerSkeleton() {
 
 /* ── Main Page ── */
 export default function Home() {
+  // Input textarea
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [confidence, setConfidence] = useState<string>("high");
-  const [source, setSource] = useState<string>("");
+  // Q&A history — max 3 entries, newest first
+  const [qaList, setQaList] = useState<Array<{
+    question: string;
+    answer: string | null;
+    source: string;
+    confidence: "high" | "medium" | "low";
+    error: string | null;
+    loading: boolean;
+  }>>([]);
+  const [copiedState, setCopiedState] = useState<Record<number, boolean>>({});
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const answerRef = useRef<HTMLDivElement>(null);
+  const listEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll when answer streams in
+  // Auto-scroll when latest answer streams in
   useEffect(() => {
-    if (answer && answerRef.current) {
-      answerRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (listEndRef.current && qaList.length) {
+      listEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [answer]);
+  }, [qaList]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -186,15 +192,26 @@ export default function Home() {
       return;
     }
 
-    setIsLoading(true);
+    // Clear input after submit
+    setQuestion("");
     setError(null);
-    setAnswer(null);
-    setConfidence("high");
-    setSource("");
 
-    // Keep question in textarea
-    const savedQuestion = question;
-    setQuestion(trimmed);
+    // Start new Q&A entry — push to front, shift if > 3
+    const newEntry = {
+      question: trimmed,
+      answer: null,
+      source: "",
+      confidence: "high" as const,
+      error: null,
+      loading: true,
+    };
+    setQaList(prev => {
+      const next = [newEntry, ...prev];
+      while (next.length > 3) next.pop();
+      return next;
+    });
+
+    setCopiedState({}); // reset copy state
 
     try {
       const response = await fetch("/api/ask", {
@@ -206,7 +223,7 @@ export default function Home() {
       if (!response.ok) {
         if (response.headers.get("content-type")?.includes("application/json")) {
           const data = await response.json();
-          throw new Error(data?.error ?? "Ralat tidak diketahui");
+          throw new Error("Maaf, tidak dapat jawab. Sila cuba lagi.");
         }
         throw new Error("Ralat pelayan. Sila cuba lagi.");
       }
@@ -223,13 +240,20 @@ export default function Home() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
-          // Finalize — extract source and display clean answer
+          // Finalize — extract source and clean answer
           const cleanAnswer = stripSource(accumulated);
           const extractedSource = extractSource(accumulated);
-          setAnswer(cleanAnswer);
-          if (extractedSource && extractedSource.toLowerCase() !== "tidak pasti") {
-            setSource(extractedSource);
-          }
+          setQaList(prev => {
+            const updated = [...prev];
+            updated[0] = {
+              ...updated[0],
+              answer: cleanAnswer,
+              source: extractedSource,
+              confidence: "high" as const, // default — can be updated in future
+              loading: false,
+            };
+            return updated;
+          });
           break;
         }
 
@@ -244,12 +268,20 @@ export default function Home() {
           try {
             const data = JSON.parse(raw);
             if (data.error) {
-              setError(data.error);
+              setQaList(prev => {
+                const updated = [...prev];
+                updated[0] = { ...updated[0], error: data.error, loading: false };
+                return updated;
+              });
               break;
             }
             if (data.content) {
               accumulated += data.content;
-              setAnswer(accumulated);
+              setQaList(prev => {
+                const updated = [...prev];
+                updated[0] = { ...updated[0], answer: accumulated };
+                return updated;
+              });
             }
           } catch {
             // Skip malformed lines
@@ -257,33 +289,47 @@ export default function Home() {
         }
       }
     } catch (err) {
-      setError((err as Error).message ?? "Sistem sedang sibuk. Cuba lagi.");
-    } finally {
-      setIsLoading(false);
+      setQaList(prev => {
+        const updated = [...prev];
+        updated[0] = {
+          ...updated[0],
+          error: "Maaf, tidak dapat jawab. Sila cuba lagi.",
+          loading: false,
+        };
+        return updated;
+      });
     }
+    // finally: handleSubmit doesn't need loading state anymore
   };
 
-  const handleCopy = async () => {
-    if (!answer) return;
+  const handleCopy = async (index: number) => {
+    const entry = qaList[index];
+    if (!entry?.answer) return;
     const text = [
-      `Soalan: ${question || "Soalan刚才"}`,
+      `Soalan: ${entry.question}`,
       "",
-      answer,
-      source ? `Sumber: ${source}` : "",
+      entry.answer,
+      entry.source ? `Sumber: ${entry.source}` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
 
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedState(prev => ({ ...prev, [index]: true }));
+      setTimeout(() => setCopiedState(prev => ({ ...prev, [index]: false })), 2000);
     } catch {
       // clipboard unavailable
     }
   };
 
-  const conf = CONFIDENCE_CONFIG[confidence] ?? CONFIDENCE_CONFIG.high;
+  // Reuse confidence config
+  type ConfidenceLevel = "high" | "medium" | "low";
+  const ENTRY_CONFIG: Record<ConfidenceLevel, { label: string; className: string }> = {
+    high: CONFIDENCE_CONFIG.high,
+    medium: CONFIDENCE_CONFIG.medium,
+    low: CONFIDENCE_CONFIG.low,
+  };
 
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col items-center px-4 py-8">
@@ -291,12 +337,12 @@ export default function Home() {
 
         {/* ── Header ── */}
         <div className="text-center pt-4">
-          <div className="flex justify-center mb-3">
+          <div className="flex justify-center mb-4">
             <Image
-              src="/icon-ustazbot.webp"
+              src="/ustazbot-logo.png"
               alt="UstazBot"
-              width={200}
-              height={57}
+              width={100}
+              height={100}
               className="object-contain"
               priority
             />
@@ -304,9 +350,9 @@ export default function Home() {
           <p className="text-sm text-emerald-700 font-medium">
             السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ ٱللَّٰهِ وَبَرَكَاتُهُ
           </p>
-          <p className="text-gray-600 mt-2 text-sm leading-relaxed">
-            AI bermazhab Shafie-ASWJ. Tanya soalan agama, dapat jawapan
-            berlandaskan rujukan muktabar.
+          <p className="text-gray-600 mt-3 text-sm leading-relaxed">
+            Jawapan ringkas untuk persoalan agama. Tidak menyimpan sejarah soalan.
+            <span className="text-red-600 font-medium"> Setiap soalan adalah baharu.</span>
           </p>
         </div>
 
@@ -328,97 +374,96 @@ export default function Home() {
                     handleSubmit(e as unknown as FormEvent<HTMLFormElement>);
                   }
                 }}
-                disabled={isLoading}
+                // Removed disabled={isLoading} because new state handles it per entry
               />
               {error && (
                 <p className="text-red-500 text-sm px-1">{error}</p>
               )}
               <button
                 type="submit"
-                disabled={isLoading}
                 className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold py-3.5 px-6 rounded-full flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isLoading ? (
-                  <>
-                    <svg
-                      className="h-4 w-4 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
-                    Sedang menjana...
-                  </>
-                ) : (
-                  <>
-                    <Send size={16} />
-                    Hantar Soalan
-                  </>
-                )}
+                <>
+                  <Send size={16} />
+                  Hantar Soalan
+                </>
               </button>
             </div>
           </form>
         </div>
 
-        {/* ── Answer Card ── */}
-        {(answer || (isLoading && !answer)) && (
-          <div ref={answerRef} className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* ── Q&A List ── */}
+        <div className="flex flex-col gap-6" ref={listEndRef}>
+          {qaList.length === 0 && (
+            <div className="text-center pt-12">
+              <p className="text-sm text-gray-500 italic">Tiada soalan telah ditanya</p>
+            </div>
+          )}
 
-              {/* Answer header */}
-              <div className="px-5 pt-5 pb-3 border-b border-slate-100">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                    Jawapan AI
-                  </span>
-                  <span
-                    className={`text-xs px-2.5 py-1 rounded-full font-medium ${conf.className}`}
-                  >
-                    Keyakinan: {conf.label}
-                  </span>
-                </div>
-              </div>
-
-              {/* Answer body */}
-              <div className="p-5">
-                {answer ? (
-                  <div className="text-sm leading-relaxed text-slate-700">
-                    <MarkdownRenderer content={answer} />
-                  </div>
-                ) : (
-                  <AnswerSkeleton />
-                )}
-
-                {/* Source bar */}
-                {source && (
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                      Sumber
+          {qaList.map((entry, index) => {
+            const conf = ENTRY_CONFIG[entry.confidence] ?? CONFIDENCE_CONFIG.high;
+            return (
+              <div
+                key={index}
+                className={`animate-in fade-in slide-in-from-bottom-4 duration-300 ${entry.loading && !entry.answer ? 'opacity-80 blur-xs pointer-events-none' : ''}`}
+              >
+                {/* Header */}
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden p-1">
+                  <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+                    <span className="text-xs font-medium text-slate-600">
+                      Soalan #{qaList.length - index}
                     </span>
-                    <p className="mt-1 text-xs text-slate-500">{source}</p>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                {answer && (
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
-                    <button
-                      onClick={handleCopy}
-                      className="flex-1 flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium py-2.5 px-4 rounded-xl transition-colors text-sm border border-gray-200"
+                    <span
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${conf.className}`}
                     >
-                      {copied ? (
+                      Keyakinan: {entry.loading ? "Dalam proses..." : conf.label}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="px-4 py-4 bg-white -mt-px border-x border-slate-200">
+                  <div className="text-sm font-medium text-gray-900">
+                    {entry.question}
+                  </div>
+
+                  {!!entry.error && (
+                    <div className="mt-3">
+                      <p className="text-red-500 text-sm">{entry.error}</p>
+                    </div>
+                  )}
+
+                  {!!entry.answer && !entry.loading && (
+                    <div className="mt-3 text-sm leading-relaxed text-slate-700">
+                      <MarkdownRenderer content={entry.answer} />
+                    </div>
+                  )}
+
+                  {entry.loading && !entry.answer && (
+                    <div className="mt-3">
+                      <AnswerSkeleton />
+                    </div>
+                  )}
+
+                  {/* Source */}
+                  {!!entry.source && !entry.loading && (!entry.error) && (
+                    <div className="mt-4 pt-3 border-t border-slate-100">
+                      <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                        Sumber
+                      </span>
+                      <p className="mt-1 text-xs text-slate-500">{entry.source}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Copy button */}
+                {!!entry.answer && !entry.loading && (!entry.error) && (
+                  <div className="bg-white -mt-px px-4 pb-4 rounded-b-2xl border-x border-t-0 border border-slate-200">
+                    <button
+                      onClick={() => handleCopy(index)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium py-2.5 px-4 rounded-xl transition-colors text-sm border border-gray-200 w-full"
+                    >
+                      {copiedState[index] ? (
                         <>
                           <Check size={14} />
                           Disalin!
@@ -434,15 +479,17 @@ export default function Home() {
                 )}
 
                 {/* Disclaimer */}
-                {answer && (
-                  <p className="mt-3 text-xs text-amber-600 leading-relaxed">
+                {!!entry.answer && !entry.loading && !entry.error ? (
+                  <p className="mt-3 px-4 pb-3 text-xs text-amber-600 leading-relaxed">
                     Ini panduan umum — rujuk ulama/autoriti jika ragu.
                   </p>
+                ) : (
+                  <p className="mt-3 px-4 pb-3 h-5"></p> // spacing
                 )}
               </div>
-            </div>
-          </div>
-        )}
+            );
+          })}
+        </div>
 
         {/* ── Contoh Soalan ── */}
         <div className="flex flex-col gap-3">
@@ -453,7 +500,10 @@ export default function Home() {
             {EXAMPLE_QUESTIONS.map((q) => (
               <button
                 key={q}
-                onClick={() => setQuestion(q)}
+                onClick={() => {
+                  setQuestion(q);
+                  setError(null);
+                }}
                 className="text-sm bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-full hover:border-emerald-400 hover:text-emerald-700 transition-colors shadow-sm"
               >
                 {q}
@@ -533,17 +583,12 @@ export default function Home() {
         <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white/70 p-5 text-xs text-slate-500">
           <h3 className="text-sm font-semibold text-slate-700">Penafian</h3>
           <p className="leading-relaxed">
-            Jawapan AI berdasarkan maklumat yang tersedia dan tidak menggantikan
-            pandangan ulama. Untuk isu kritikal, mohon rujuk pihak berautoriti.
-          </p>
-          <p className="leading-relaxed">
-            UstazBot tidak menyimpan sejarah perbualan. Setiap soalan dianggap
-            baharu dan bebas data peribadi.
+            Jawapan dijana berdasarkan skop dan arahan yang ditetapkan. Untuk isu kritikal, sila rujuk ulama atau pihak berkuasa agama.
           </p>
         </div>
 
         <p className="text-center text-xs text-gray-400 pb-8 leading-relaxed">
-          © {new Date().getFullYear()} UstazBot · Dibina dengan kasih sayang
+          © {new Date().getFullYear()} UstazBot
         </p>
 
       </div>
