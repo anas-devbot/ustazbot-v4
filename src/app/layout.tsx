@@ -24,8 +24,21 @@ export const metadata: Metadata = {
     url: "https://ustazbot.com",
     siteName: "UstazBot",
     type: "website",
-    locale: "ms_MY",
+    images: ["/icon-ustazbot.webp"],
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "UstazBot — Jawapan Agama Islam",
+    description:
+      "AI bermazhab Shafie-ASWJ. Tanya soalan agama, dapat jawapan berlandaskan rujukan muktabar.",
+    images: ["/icon-ustazbot.webp"],
+  },
+  icons: {
+    icon: "/icon-ustazbot.webp",
+    shortcut: "/icon-ustazbot.webp",
+    apple: "/icon-ustazbot.webp",
+  },
+  metadataBase: new URL("https://ustazbot.com"),
   robots: {
     index: true,
     follow: true,

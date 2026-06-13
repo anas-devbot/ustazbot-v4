@@ -293,7 +293,7 @@ export default function Home() {
         <div className="text-center pt-4">
           <div className="flex justify-center mb-3">
             <Image
-              src="/images/UstazBot-Site-Logo-2.png"
+              src="/icon-ustazbot.webp"
               alt="UstazBot"
               width={200}
               height={57}
